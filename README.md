@@ -12,8 +12,12 @@ Node v20.8.1
    Linux/macOS 系统：export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
 4. 执行：npm install
 
-启动项目（需要开两个终端）：
+启动项目：
+场景一：单指令同时启动 Vue、Electron：
+执行：npm run dev
 
-1. 终端 1（运行 Vue）：npm run dev
-   确保终端 1 运行起来后，再进行下面操作；
-2. 终端 2（运行 Electron）：npm start
+场景二：单独启动 Vue 网页端：
+执行：npm run dev:vue
+
+场景三：单独启动 Electron 窗口：
+执行：npm start

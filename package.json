@@ -4,10 +4,12 @@
   "version": "0.0.0",
   "main": "main.js",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently \"npm run dev:vue\" \"npm run dev:electron\"",
+    "dev:vue": "vite",
+    "dev:electron": "nodemon --exec electron . --watch ./ --ext .js,.html,.css,.vue",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "nodemon --exec electron . --watch ./ --ext .js,.html,.css,.vue"
+    "start": "electron ."
   },
   "author": "NanY",
   "description": "this is Dingzhen",
