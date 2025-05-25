@@ -14,7 +14,8 @@ export const useAuthStore = defineStore('auth', {
             this.userInfo = {
                 id: res.id,
                 name: res.name,
-                email: res.email
+                email: res.email,
+                createdAt: res.createdAt
             };
             localStorage.setItem('token', res.token);
             localStorage.setItem('userInfo', JSON.stringify(this.userInfo));
