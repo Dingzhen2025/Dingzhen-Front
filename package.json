@@ -6,21 +6,25 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:vue\" \"npm run dev:electron\"",
     "dev:vue": "vite",
-    "dev:electron": "nodemon --exec electron . --watch ./ --ext .js,.html,.css,.vue",
-    "build": "vite build",
+    "dev:electron": "nodemon --exec electron . --watch ./ --ext .js,.html,.css,.vue,electron",
+    "build": "vite build && electron-builder",
     "preview": "vite preview",
     "start": "electron ."
   },
   "author": "NanY",
   "description": "this is Dingzhen",
   "dependencies": {
+    "axios": "^1.6.7",
+    "pinia": "^2.1.7",
     "vue": "^3.5.13",
     "vue-router": "^4.5.1"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.3",
+    "chokidar": "^3.5.3",
     "concurrently": "^9.1.2",
     "electron": "^36.2.1",
+    "electron-builder": "^24.6.4",
     "nodemon": "^3.1.10",
     "vite": "^6.3.5"
   }

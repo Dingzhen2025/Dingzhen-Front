@@ -1,5 +1,6 @@
 const { app, BrowserWindow } = require("electron");
 const path = require("node:path");
+require('./electron/ipc'); // 新增：引入IPC
 
 // ⽤于创建窗⼝
 function createWindow() {
