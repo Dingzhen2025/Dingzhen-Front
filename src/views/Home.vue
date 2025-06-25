@@ -1,7 +1,7 @@
 <script setup>
-import { ref, onMounted } from "vue";
-import { useRouter, useRoute } from "vue-router";
-import { ElMessage } from "element-plus";
+import { ref, computed, onUnmounted } from "vue";
+import { useRouter } from "vue-router";
+import { ElMessage, ElMessageBox } from "element-plus";
 import {
   Upload,
   Delete,
@@ -16,13 +16,17 @@ import {
   RefreshRight,
   ArrowRight,
   ArrowLeft,
+  View,
 } from "@element-plus/icons-vue";
+import { useImageLibraryStore } from "@/stores/imageLibrary";
 
 const router = useRouter();
-const route = useRoute();
+const imageLibraryStore = useImageLibraryStore();
 const activeStep = ref(0);
 const libraryPath = ref("");
 const previewImage = ref("");
+const uploadedFileName = ref("");
+const showPreview = ref(false);
 const recentSearches = ref([
   {
     id: 1,
@@ -42,26 +46,9 @@ const recentSearches = ref([
 ]);
 
 // 图片库统计信息
-const libraryStats = ref({
-  totalImages: 0,
-  totalSize: "0 MB",
-  lastUpdate: "",
-});
+const libraryStats = computed(() => imageLibraryStore.formattedStats);
 
-onMounted(() => {
-  // 从路由参数获取图片库路径
-  if (route.query.libraryPath) {
-    libraryPath.value = route.query.libraryPath.toString();
-    // TODO: 获取图片库统计信息
-    libraryStats.value = {
-      totalImages: 1234,
-      totalSize: "2.5 GB",
-      lastUpdate: "2024-01-20 15:30",
-    };
-  }
-});
-
-const handleFileChange = (file) => {
+const handleFileChange = async (file) => {
   const isImage = file.raw.type.startsWith("image/");
   const isLt5M = file.raw.size / 1024 / 1024 < 5;
 
@@ -74,11 +61,48 @@ const handleFileChange = (file) => {
     return;
   }
 
-  previewImage.value = URL.createObjectURL(file.raw);
+  try {
+    // 使用 FileReader 读取文件
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      previewImage.value = e.target.result;
+      uploadedFileName.value = file.name;
+      showPreview.value = false;
+    };
+    reader.readAsDataURL(file.raw);
+  } catch (error) {
+    console.error("图片预览失败:", error);
+    ElMessage.error("图片预览失败，请重试");
+  }
 };
 
-const reselectLibrary = () => {
-  router.push("/main/select");
+const selectLibraryPath = async () => {
+  try {
+    const directoryPath = await window.electronAPI.selectDirectory();
+    if (!directoryPath) {
+      ElMessage.warning("未选择任何目录");
+      return;
+    }
+
+    libraryPath.value = directoryPath;
+    imageLibraryStore.setLibraryPath(directoryPath);
+
+    // 处理图片库，计算临时哈希表
+    const success = await imageLibraryStore.processImageLibrary(directoryPath);
+
+    if (success) {
+      // 初始化文件监听
+      imageLibraryStore.initializeFileWatcher();
+      ElMessage.success(
+        `图片库选择成功，已找到 ${libraryStats.value.totalImages} 张图片`
+      );
+    } else {
+      ElMessage.error("处理图片库失败，请重试");
+    }
+  } catch (error) {
+    console.error("选择目录时发生错误:", error);
+    ElMessage.error("选择目录失败：" + (error.message || "未知错误"));
+  }
 };
 
 const startSearch = () => {
@@ -112,10 +136,64 @@ const startSearch = () => {
 
 const clearPreview = () => {
   previewImage.value = "";
+  uploadedFileName.value = "";
+  showPreview.value = false;
+};
+
+const togglePreview = () => {
+  showPreview.value = !showPreview.value;
 };
 
 const nextStep = () => {
-  activeStep.value++;
+  if (activeStep.value === 0) {
+    if (!libraryPath.value) {
+      ElMessage.warning("请先选择图片库路径");
+      return;
+    }
+
+    // 显示确认对话框
+    ElMessageBox.confirm(
+      `确认使用该图片库？
+图片库路径：${libraryPath.value}
+图片总数：${libraryStats.value.totalImages || 0} 张
+最后更新：${libraryStats.value.lastUpdate}
+当前状态：${libraryStats.value.status}
+支持格式：JPG、PNG、GIF、WEBP`,
+      "确认图片库信息",
+      {
+        confirmButtonText: "确认并继续",
+        cancelButtonText: "取消",
+        type: "info",
+        dangerouslyUseHTMLString: false,
+        customClass: "custom-message-box",
+      }
+    )
+      .then(async () => {
+        try {
+          // 在后台进行哈希表比对，不等待完成
+          imageLibraryStore.compareAndUpdateHashTables().catch((error) => {
+            console.error("后台同步失败:", error);
+            // 不阻止用户操作，只显示提示
+            ElMessage.warning("图片库同步可能不完整，但您可以继续操作");
+          });
+
+          // 直接进入下一步
+          activeStep.value++;
+          ElMessage.success("正在后台同步图片库，您可以继续操作");
+        } catch (error) {
+          console.error("进入下一步失败:", error);
+          ElMessage.error("操作失败，请重试");
+        }
+      })
+      .catch(() => {
+        // 用户取消，不做任何操作
+      });
+  } else if (activeStep.value === 1 && !previewImage.value) {
+    ElMessage.warning("请先上传要搜索的图片");
+    return;
+  } else {
+    activeStep.value++;
+  }
 };
 
 const prevStep = () => {
@@ -141,6 +219,31 @@ const reSearch = (item) => {
   previewImage.value = item.imageUrl;
   startSearch();
 };
+
+// 组件卸载时清理监听器
+onUnmounted(() => {
+  imageLibraryStore.cleanupFileWatcher();
+  if (previewImage.value) {
+    URL.revokeObjectURL(previewImage.value);
+  }
+});
+
+// 添加样式
+const style = document.createElement("style");
+style.textContent = `
+.custom-message-box .el-message-box__message {
+  white-space: pre-line;
+  font-family: monospace;
+  line-height: 1.5;
+}
+`;
+document.head.appendChild(style);
+
+// 添加图片加载错误处理
+const handleImageError = () => {
+  ElMessage.error("图片加载失败，请重新选择");
+  clearPreview();
+};
 </script>
 
 <template>
@@ -156,25 +259,25 @@ const reSearch = (item) => {
             finish-status="success"
             class="search-steps"
           >
-            <el-step title="确认图片库" description="确认或重新选择图片库" />
+            <el-step title="选择图片库" description="选择要搜索的图片文件夹" />
             <el-step title="上传图片" description="上传要搜索的目标图片" />
           </el-steps>
 
-          <!-- 步骤1：确认图片库 -->
+          <!-- 步骤1：选择图片库 -->
           <div v-if="activeStep === 0" class="step-content">
             <div class="library-select">
               <div class="library-path" v-if="libraryPath">
                 <el-alert type="success" :closable="false" show-icon>
-                  <template #title> 当前图片库路径： </template>
+                  <template #title>已选择图片库路径：</template>
                   <template #default>
                     {{ libraryPath }}
                     <el-button
                       type="primary"
                       link
                       class="change-path"
-                      @click="reselectLibrary"
+                      @click="selectLibraryPath"
                     >
-                      重新选择
+                      更改路径
                     </el-button>
                   </template>
                 </el-alert>
@@ -185,76 +288,116 @@ const reSearch = (item) => {
                   <el-button
                     type="primary"
                     size="large"
-                    @click="reselectLibrary"
+                    @click="selectLibraryPath"
                   >
                     <el-icon class="button-icon"><FolderAdd /></el-icon>
-                    选择图片库
+                    选择图片库文件夹
                   </el-button>
                 </el-empty>
               </div>
 
               <div class="library-info" v-if="libraryPath">
-                <el-descriptions :column="2" border>
+                <el-descriptions title="图片库信息" :column="2" border>
                   <el-descriptions-item label="图片总数">
                     {{ libraryStats.totalImages || 0 }} 张
                   </el-descriptions-item>
                   <el-descriptions-item label="支持格式">
                     JPG, PNG, GIF
                   </el-descriptions-item>
-                  <el-descriptions-item label="库大小">
-                    {{ libraryStats.totalSize }}
-                  </el-descriptions-item>
                   <el-descriptions-item label="最后更新">
-                    {{ libraryStats.lastUpdate }}
+                    {{ libraryStats.lastUpdate || "未知" }}
+                  </el-descriptions-item>
+                  <el-descriptions-item label="状态">
+                    <el-tag type="success" v-if="imageLibraryStore.isWatching"
+                      >监控中</el-tag
+                    >
+                    <el-tag type="warning" v-else>未监控</el-tag>
                   </el-descriptions-item>
                 </el-descriptions>
 
-                <div class="step-actions" v-if="libraryPath">
-                  <el-button type="primary" @click="nextStep">
-                    下一步
-                    <el-icon class="el-icon--right"><ArrowRight /></el-icon>
-                  </el-button>
+                <div class="confirm-section">
+                  <el-alert
+                    type="info"
+                    :closable="false"
+                    show-icon
+                    title="请确认图片库信息"
+                    description="确认无误后点击下一步继续"
+                  />
+                  <div class="step-actions">
+                    <el-button type="primary" size="large" @click="nextStep">
+                      确认并继续
+                      <el-icon class="el-icon--right"><ArrowRight /></el-icon>
+                    </el-button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- 步骤2：上传图片 -->
-          <div v-if="activeStep === 1" class="step-content">
+          <!-- 步骤2：上传搜索图片 -->
+          <div v-else class="step-content">
             <div class="upload-section">
-              <el-upload
-                class="image-uploader"
-                :show-file-list="false"
-                :on-change="handleFileChange"
-                accept="image/*"
-                :auto-upload="false"
-              >
-                <div v-if="!previewImage" class="upload-placeholder">
-                  <el-icon class="upload-icon"><Upload /></el-icon>
-                  <div class="upload-text">点击上传图片</div>
-                </div>
-                <img v-else :src="previewImage" class="preview-image" />
-              </el-upload>
+              <div class="upload-area" v-if="!previewImage">
+                <el-upload
+                  class="upload-dragger"
+                  drag
+                  action="#"
+                  :auto-upload="false"
+                  :show-file-list="false"
+                  :on-change="handleFileChange"
+                  accept="image/*"
+                >
+                  <div class="upload-content">
+                    <el-icon class="upload-icon"><Upload /></el-icon>
+                    <div class="upload-text">
+                      将要搜索的图片拖到此处或<em>点击上传</em>
+                    </div>
+                    <div class="upload-tip">
+                      支持 jpg、png、gif 格式，单个文件不超过 5MB
+                    </div>
+                  </div>
+                </el-upload>
+              </div>
 
-              <div class="preview-actions" v-if="previewImage">
-                <el-button type="danger" @click="clearPreview">
-                  <el-icon><Delete /></el-icon>
-                  清除
-                </el-button>
+              <div v-else class="preview-section">
+                <div class="preview-container">
+                  <div class="preview-header">
+                    <span class="preview-title">已选择图片</span>
+                    <div class="preview-info">
+                      <span v-if="uploadedFileName"
+                        >文件名：{{ uploadedFileName }}</span
+                      >
+                    </div>
+                  </div>
+                  <div v-if="showPreview" class="preview-image-container">
+                    <img
+                      :src="previewImage"
+                      alt="预览图"
+                      class="preview-image"
+                      @error="handleImageError"
+                    />
+                  </div>
+                  <div class="preview-actions">
+                    <el-button type="primary" @click="togglePreview">
+                      <el-icon class="action-icon"><View /></el-icon>
+                      {{ showPreview ? "隐藏预览" : "查看预览" }}
+                    </el-button>
+                    <el-button type="primary" @click="startSearch">
+                      <el-icon class="action-icon"><Search /></el-icon>
+                      开始搜索
+                    </el-button>
+                    <el-button @click="clearPreview">
+                      <el-icon class="action-icon"><RefreshRight /></el-icon>
+                      重新选择
+                    </el-button>
+                  </div>
+                </div>
               </div>
 
               <div class="step-actions">
                 <el-button @click="prevStep">
                   <el-icon class="el-icon--left"><ArrowLeft /></el-icon>
-                  上一步
-                </el-button>
-                <el-button
-                  type="primary"
-                  @click="startSearch"
-                  :disabled="!previewImage"
-                >
-                  开始搜索
-                  <el-icon class="el-icon--right"><Search /></el-icon>
+                  返回上一步
                 </el-button>
               </div>
             </div>
@@ -408,6 +551,13 @@ const reSearch = (item) => {
   margin-top: 20px;
 }
 
+.confirm-section {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .step-actions {
   margin-top: 24px;
   display: flex;
@@ -421,38 +571,156 @@ const reSearch = (item) => {
   gap: 24px;
 }
 
-.recent-header {
+.upload-area {
+  padding: 40px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.upload-content {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
-  margin-bottom: 12px;
+  gap: 16px;
 }
 
-.recent-time {
-  color: #64748b;
+.upload-icon {
+  font-size: 48px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.upload-text {
+  font-size: 16px;
+  color: #fff;
+}
+
+.upload-text em {
+  color: #60a5fa;
+  font-style: normal;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.upload-tip {
   font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
 }
 
-.recent-path {
-  color: #1e293b;
-  font-size: 14px;
-  max-width: 150px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.recent-image {
+.preview-section {
   width: 100%;
-  height: 200px;
-  object-fit: cover;
-  border-radius: 8px;
-  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
 }
 
-.recent-footer {
+.preview-container {
+  width: 100%;
+  max-width: 600px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.preview-header {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.preview-title {
+  font-size: 18px;
+  color: #fff;
+  font-weight: 500;
+}
+
+.preview-info {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.preview-image-container {
+  width: 100%;
+  min-height: 200px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  position: relative;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 400px;
+  object-fit: contain;
+  border-radius: 4px;
+  display: block;
+}
+
+.preview-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.action-icon {
+  margin-right: 4px;
+}
+
+:deep(.el-descriptions) {
+  --el-descriptions-item-bordered-label-background: rgba(255, 255, 255, 0.1);
+  --el-descriptions-item-label-text-color: rgba(255, 255, 255, 0.9);
+  --el-descriptions-item-text-color: #fff;
+  margin-bottom: 20px;
+}
+
+:deep(.el-descriptions__title) {
+  color: #fff;
+  margin-bottom: 16px;
+}
+
+:deep(.el-descriptions__cell) {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+:deep(.el-upload-dragger) {
+  background-color: transparent;
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+}
+
+:deep(.el-upload-dragger:hover) {
+  border-color: #60a5fa;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+:deep(.el-alert--success) {
+  background-color: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+:deep(.el-alert--info) {
+  background-color: rgba(96, 165, 250, 0.1);
+  border: 1px solid rgba(96, 165, 250, 0.2);
+}
+
+:deep(.el-tag) {
+  background-color: transparent;
+}
+
+:deep(.el-tag--success) {
+  border-color: #10b981;
+  color: #10b981;
+}
+
+:deep(.el-tag--warning) {
+  border-color: #f59e0b;
+  color: #f59e0b;
 }
 
 .features-section {

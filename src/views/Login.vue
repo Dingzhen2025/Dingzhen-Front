@@ -34,7 +34,7 @@
 
           <div class="form-options">
             <el-checkbox v-model="loginData.remember">记住我</el-checkbox>
-            <el-link type="primary" :underline="false">忘记密码？</el-link>
+            <el-link type="primary" underline="never">忘记密码？</el-link>
           </div>
 
           <el-form-item>
@@ -51,7 +51,7 @@
 
         <div class="register-link">
           还没有账号？
-          <el-link type="primary" :underline="false" @click="handleRegister">
+          <el-link type="primary" underline="never" @click="handleRegister">
             立即注册
           </el-link>
         </div>
@@ -61,11 +61,11 @@
     <footer class="login-footer">
       <p>© 2025 图搜图系统 版权所有</p>
       <div class="footer-links">
-        <el-link type="info" :underline="false">隐私政策</el-link>
+        <el-link type="info" underline="never">隐私政策</el-link>
         <el-divider direction="vertical" />
-        <el-link type="info" :underline="false">用户协议</el-link>
+        <el-link type="info" underline="never">用户协议</el-link>
         <el-divider direction="vertical" />
-        <el-link type="info" :underline="false">帮助中心</el-link>
+        <el-link type="info" underline="never">帮助中心</el-link>
       </div>
     </footer>
 
@@ -112,13 +112,21 @@ const handleLogin = async () => {
     loading.value = true;
 
     // 模拟登录请求
-    setTimeout(() => {
+    setTimeout(async () => {
       loading.value = false;
-      router.push("/main/select");
       ElMessage.success("登录成功");
+
+      // 使用 await 等待路由跳转完成
+      try {
+        await router.push({ path: "/main/home" });
+      } catch (error) {
+        console.error("路由跳转失败:", error);
+        ElMessage.error("页面跳转失败，请重试");
+      }
     }, 1500);
   } catch (error) {
-    console.log("表单验证失败", error);
+    console.error("表单验证失败", error);
+    loading.value = false;
   }
 };
 

@@ -14,7 +14,13 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component);
 }
 
+// 使用 Pinia
 app.use(createPinia());
-app.use(router);
+
+// 使用 Element Plus
 app.use(ElementPlus);
+
+// 使用路由
+app.use(router);
+
 app.mount("#app");

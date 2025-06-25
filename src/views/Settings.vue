@@ -8,26 +8,15 @@
       </template>
 
       <el-form ref="formRef" :model="settings" label-width="180px">
-        <el-form-item label="当前图片库路径">
-          <div class="library-path-container">
-            <el-input
-              v-model="settings.defaultSearchPath"
-              readonly
-              placeholder="未选择图片库"
-            >
-              <template #append>
-                <el-button @click="handleSelectPath">
-                  <el-icon>
-                    <FolderAdd />
-                  </el-icon>
-                  重新选择
-                </el-button>
-              </template>
-            </el-input>
-            <div class="path-tip" v-if="settings.defaultSearchPath">
-              此路径下的图片将被用于图像搜索
-            </div>
-          </div>
+        <el-form-item label="默认搜索文件夹">
+          <el-input
+            v-model="settings.defaultSearchPath"
+            placeholder="请选择默认搜索文件夹"
+          >
+            <template #append>
+              <el-button @click="handleSelectPath"> 选择 </el-button>
+            </template>
+          </el-input>
         </el-form-item>
 
         <el-form-item label="搜索结果数量">
@@ -155,16 +144,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from "vue";
-import { useRouter } from "vue-router";
+import { ref, reactive } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { FolderAdd } from "@element-plus/icons-vue";
-
-const router = useRouter();
 
 // 基本设置
 const settings = reactive({
-  defaultSearchPath: "",
+  defaultSearchPath: "C:\\Users\\Pictures",
   resultCount: 10,
   similarityThreshold: 80,
   syncInterval: "10",
@@ -185,17 +170,11 @@ const storageSettings = reactive({
   cacheSize: "156MB",
 });
 
-onMounted(() => {
-  // 从本地存储获取当前选择的图片库路径
-  const lastLibraryPath = localStorage.getItem("lastLibraryPath");
-  if (lastLibraryPath) {
-    settings.defaultSearchPath = lastLibraryPath;
-  }
-});
-
-// 重新选择图片库
+// 选择路径
 const handleSelectPath = () => {
-  router.push("/main/select");
+  // 这里需要调用 Electron 的文件选择对话框
+  // 暂时模拟选择文件夹
+  settings.defaultSearchPath = "D:\\Pictures";
 };
 
 const handleSelectStoragePath = () => {
@@ -216,11 +195,19 @@ const handleClearCache = async () => {
         type: "warning",
       }
     );
-    // 这里应该调用接口清理缓存
-    ElMessage.success("缓存清理成功");
-    storageSettings.cacheSize = "0MB";
-  } catch {
-    // 用户取消操作
+
+    const result = await window.electronAPI.clearCache();
+    if (result) {
+      ElMessage.success("缓存清理成功");
+      storageSettings.cacheSize = "0MB";
+    } else {
+      ElMessage.error("缓存清理失败");
+    }
+  } catch (error) {
+    if (error !== "cancel") {
+      console.error("清理缓存失败:", error);
+      ElMessage.error("清理缓存失败，请重试");
+    }
   }
 };
 
@@ -244,7 +231,7 @@ const handleReset = async () => {
     );
     // 重置所有设置为默认值
     Object.assign(settings, {
-      defaultSearchPath: "",
+      defaultSearchPath: "C:\\Users\\Pictures",
       resultCount: 10,
       similarityThreshold: 80,
       syncInterval: "10",
@@ -539,25 +526,6 @@ const handleReset = async () => {
     bottom: 16px;
     right: 16px;
     padding: 12px 20px;
-  }
-}
-
-.library-path-container {
-  .path-tip {
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
-    margin-top: 4px;
-    padding-left: 4px;
-  }
-}
-
-.el-input {
-  :deep(.el-input-group__append) {
-    .el-button {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
   }
 }
 </style>

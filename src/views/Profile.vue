@@ -80,6 +80,14 @@
               <el-input v-model="form.phone" />
             </el-form-item>
 
+            <el-form-item label="默认路径" prop="defaultPath">
+              <el-input v-model="form.defaultPath">
+                <template #append>
+                  <el-button @click="handleSelectPath"> 选择 </el-button>
+                </template>
+              </el-input>
+            </el-form-item>
+
             <el-form-item v-if="isEditing">
               <el-button type="primary" @click="handleSave">保存</el-button>
               <el-button @click="cancelEdit">取消</el-button>
@@ -167,6 +175,7 @@ const form = reactive({
   nickname: "图搜达人",
   email: "user@example.com",
   phone: "13800138000",
+  defaultPath: "C:\\Users\\Pictures",
 });
 
 // 表单验证规则
@@ -254,6 +263,13 @@ const handleSave = async () => {
       isEditing.value = false;
     }
   });
+};
+
+// 选择路径
+const handleSelectPath = () => {
+  // 这里需要调用 Electron 的文件选择对话框
+  // 暂时模拟选择文件夹
+  form.defaultPath = "D:\\Pictures";
 };
 
 // 修改密码相关方法

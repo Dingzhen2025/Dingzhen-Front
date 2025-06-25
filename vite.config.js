@@ -21,8 +21,10 @@ export default defineConfig({
       "@": resolve(__dirname, "src"),
     },
   },
-  base: "./",
+  base: process.env.ELECTRON == "true" ? "./" : "/",
   server: {
     port: 3000,
+    host: true,
+    strictPort: true,
   },
 });

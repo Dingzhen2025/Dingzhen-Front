@@ -19,14 +19,8 @@ const routes = [
     path: "/main",
     name: "Layout",
     component: () => import("@/views/Layout.vue"),
-    redirect: "/main/select",
+    redirect: "/main/home",
     children: [
-      {
-        path: "select",
-        name: "Select",
-        component: () => import("@/views/Select.vue"),
-        meta: { title: "选择图片库" },
-      },
       {
         path: "home",
         name: "Home",
@@ -64,6 +58,17 @@ const routes = [
 const router = createRouter({
   history: createWebHashHistory(),
   routes,
+});
+
+// 添加全局路由错误处理
+router.onError((error) => {
+  console.error("路由错误:", error);
+});
+
+// 添加导航守卫
+router.beforeEach((to, from, next) => {
+  console.log("导航到:", to.path);
+  next();
 });
 
 export default router;
