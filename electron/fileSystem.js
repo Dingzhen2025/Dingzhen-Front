@@ -90,6 +90,41 @@ function registerIpcHandlers(mainWindow) {
     }
     return false;
   });
+
+  // 添加文件读取处理
+  ipcMain.handle("read-image-file", async (event, filePath) => {
+    try {
+      // 验证文件是否存在
+      await fs.access(filePath);
+
+      // 验证是否为图片文件
+      if (!IMAGE_EXTENSIONS.includes(path.extname(filePath).toLowerCase())) {
+        throw new Error("不是有效的图片文件");
+      }
+
+      // 读取文件
+      const buffer = await fs.readFile(filePath);
+
+      // 获取文件信息
+      const stats = await fs.stat(filePath);
+
+      // 创建File对象所需的元数据
+      const metadata = {
+        lastModified: stats.mtimeMs,
+        size: stats.size,
+        type: `image/${path.extname(filePath).toLowerCase().slice(1)}`,
+      };
+
+      return {
+        buffer: buffer,
+        metadata: metadata,
+        fileName: path.basename(filePath),
+      };
+    } catch (error) {
+      console.error("读取图片文件失败:", error);
+      throw error;
+    }
+  });
 }
 
 // 递归处理目录

@@ -357,32 +357,54 @@ export const useImageLibraryStore = defineStore("imageLibrary", {
       try {
         console.log("开始同步到后端...");
 
-        // 先处理删除的图片
+        // 处理新增的图片
+        if (changes.added.length > 0) {
+          console.log("同步新增操作到后端...");
+          // 转换为上传接口需要的格式，并读取文件内容
+          const imagesToAdd = await Promise.all(
+            changes.added.map(async (image) => {
+              try {
+                console.log("读取图片文件:", image.filePath);
+                // 使用electronAPI读取文件
+                const fileData = await window.electronAPI.readImageFile(
+                  image.filePath
+                );
+
+                // 创建File对象
+                const file = new File([fileData.buffer], fileData.fileName, {
+                  type: fileData.metadata.type,
+                  lastModified: fileData.metadata.lastModified,
+                });
+
+                return {
+                  fileName: image.fileName,
+                  filePath: image.filePath,
+                  file: file, // 现在包含了实际的文件对象
+                  size: image.size,
+                  modifiedTime: image.modifiedTime,
+                  createdTime: image.createdTime,
+                };
+              } catch (error) {
+                console.error(`读取图片失败 ${image.filePath}:`, error);
+                throw error;
+              }
+            })
+          );
+
+          console.log("准备上传图片，已读取文件内容:", imagesToAdd);
+          const addResult = await imageApi.addImages(imagesToAdd);
+          console.log("新增操作结果:", addResult);
+        }
+
+        // 处理删除的图片
         if (changes.removed.length > 0) {
           console.log("同步删除操作到后端...");
-          // 转换为删除接口需要的格式
           const imagesToDelete = changes.removed.map((image) => ({
             fileName: image.fileName || path.basename(image.filePath),
             filePath: image.filePath,
           }));
           const deleteResult = await imageApi.deleteImages(imagesToDelete);
           console.log("删除操作结果:", deleteResult);
-        }
-
-        // 再处理新增的图片
-        if (changes.added.length > 0) {
-          console.log("同步新增操作到后端...");
-          // 转换为上传接口需要的格式
-          const imagesToAdd = changes.added.map((image) => ({
-            fileName: image.fileName,
-            filePath: image.filePath,
-            file: image.file, // 需要实际的文件对象
-            size: image.size,
-            modifiedTime: image.modifiedTime,
-            createdTime: image.createdTime,
-          }));
-          const addResult = await imageApi.addImages(imagesToAdd);
-          console.log("新增操作结果:", addResult);
         }
 
         console.log("后端同步完成");

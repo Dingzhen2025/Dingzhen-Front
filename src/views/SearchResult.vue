@@ -166,16 +166,18 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue";
-import { useRouter } from "vue-router";
+import { ref, computed, onMounted } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import { ElMessage } from "element-plus";
 import { Download, FolderOpened, PictureFilled } from "@element-plus/icons-vue";
+import { imageApi } from "@/api/imageApi";
 
 const router = useRouter();
+const route = useRoute();
 const loading = ref(false);
-const queryImage = ref("https://picsum.photos/300/200");
-const totalResults = ref(156);
-const searchTime = ref(0.82);
+const queryImage = ref("");
+const totalResults = ref(0);
+const searchTime = ref(0);
 
 // 筛选和排序
 const sortBy = ref("similarity");
@@ -186,19 +188,8 @@ const similarityThreshold = ref(60);
 const previewVisible = ref(false);
 const currentPreview = ref(null);
 
-// 模拟搜索结果数据
-const searchResults = ref(
-  Array.from({ length: 20 }, (_, i) => ({
-    id: i + 1,
-    url: `https://picsum.photos/${300 + i}/${200 + (i % 2) * 100}`,
-    name: `image_${i + 1}.jpg`,
-    similarity: Math.round(95 - Math.random() * 30),
-    size: "2.5MB",
-    path: "C:\\Users\\Pictures\\image.jpg",
-    modifiedTime: "2024-03-20 15:30:45",
-    aspectRatio: "4/3",
-  }))
-);
+// 搜索结果数据
+const searchResults = ref([]);
 
 // 过滤后的结果
 const filteredResults = computed(() => {
@@ -226,43 +217,116 @@ const filteredResults = computed(() => {
     });
 });
 
+// 执行搜索
+const performSearch = async (searchFile) => {
+  if (!searchFile) {
+    ElMessage.error("搜索图片不存在");
+    return;
+  }
+
+  loading.value = true;
+  const startTime = Date.now();
+
+  try {
+    console.log("开始执行图搜图...");
+    const response = await imageApi.searchImage(searchFile);
+
+    if (response.code === 200 && response.data.ranklist) {
+      console.log("搜索成功，处理结果数据...");
+
+      // 处理搜索结果
+      searchResults.value = response.data.ranklist.map((item) => ({
+        id: item.path, // 使用路径作为唯一标识
+        url: item.url,
+        name: item.imgName,
+        similarity: Math.round((1 - item.distance) * 100), // 将距离转换为相似度百分比
+        size: "计算中...", // TODO: 获取实际文件大小
+        path: item.path,
+        modifiedTime: new Date().toLocaleString(), // TODO: 获取实际修改时间
+        aspectRatio: "4/3", // TODO: 获取实际宽高比
+      }));
+
+      totalResults.value = searchResults.value.length;
+      searchTime.value = ((Date.now() - startTime) / 1000).toFixed(2);
+
+      console.log(
+        `搜索完成，找到 ${totalResults.value} 个结果，用时 ${searchTime.value} 秒`
+      );
+    } else {
+      throw new Error(response.msg || "搜索失败");
+    }
+  } catch (error) {
+    console.error("搜索过程出错:", error);
+    ElMessage.error(error.message || "搜索失败，请重试");
+    searchResults.value = [];
+    totalResults.value = 0;
+  } finally {
+    loading.value = false;
+  }
+};
+
 // 处理排序
 const handleSort = () => {
   // 排序逻辑已通过计算属性实现
+  console.log("更改排序方式:", sortBy.value);
 };
 
 // 处理筛选
 const handleFilter = () => {
   // 筛选逻辑已通过计算属性实现
+  console.log("更改文件类型筛选:", fileType.value);
 };
 
 // 处理相似度阈值变化
 const handleSimilarityChange = () => {
   // 相似度筛选逻辑已通过计算属性实现
+  console.log("更改相似度阈值:", similarityThreshold.value);
 };
 
 // 处理图片预览
 const handlePreview = (item) => {
+  console.log("预览图片:", item.name);
   currentPreview.value = item;
   previewVisible.value = true;
 };
 
 // 处理下载
 const handleDownload = (item) => {
+  console.log("下载图片:", item.name);
+  // TODO: 实现实际的下载逻辑
   ElMessage.success(`开始下载：${item.name}`);
-  // TODO: 实现下载逻辑
 };
 
 // 处理定位
 const handleLocate = (item) => {
+  console.log("定位图片:", item.path);
+  // TODO: 实现实际的文件定位逻辑
   ElMessage.success(`正在打开文件夹：${item.path}`);
-  // TODO: 实现文件定位逻辑
 };
 
 // 重新搜索
 const handleRetry = () => {
   router.push("/main/home");
 };
+
+// 组件挂载时开始搜索
+onMounted(() => {
+  // 获取查询参数
+  const { image } = route.query;
+  queryImage.value = image;
+
+  // 获取路由状态中的文件对象
+  const { searchFile } = router.currentRoute.value.state || {};
+
+  if (searchFile) {
+    console.log("获取到搜索文件:", searchFile.name);
+    performSearch(searchFile);
+  } else {
+    console.error("未找到搜索文件");
+    ElMessage.error("搜索文件不存在，请重新上传");
+    router.push("/main/home");
+  }
+});
 </script>
 
 <style scoped>

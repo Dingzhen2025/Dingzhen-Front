@@ -31,6 +31,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("process-image-folder", folderPath),
   getStoredImages: () => ipcRenderer.invoke("get-stored-images"),
   saveImages: (images) => ipcRenderer.invoke("save-images", images),
+
+  // 添加文件读取功能
+  readImageFile: (filePath) => ipcRenderer.invoke("read-image-file", filePath),
 });
 
 // 设置渲染进程的安全策略

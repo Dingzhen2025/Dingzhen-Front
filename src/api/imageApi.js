@@ -17,25 +17,31 @@ export const imageApi = {
       // 创建 FormData 对象
       const formData = new FormData();
       formData.append("imgName", imageData.fileName);
-      formData.append("img", imageData.file); // 需要实际的文件对象
-      formData.append("dev", "1bdjwqdwq"); // 设备标识
-      formData.append("dir", normalizeFilePath(imageData.filePath));
-      formData.append("userid", "1"); // 用户ID
+      formData.append("img", imageData.file);
+      formData.append("dev", "1bdjwqdwq"); // 可选参数
+      formData.append("dir", normalizeFilePath(imageData.filePath)); // 可选参数
+      formData.append("userId", "1"); // 修正参数名为 userId
+      // 生成唯一键（使用时间戳+随机数）
+      const uniqueKey = `${Date.now()}_${Math.random()
+        .toString(36)
+        .substr(2, 9)}`;
+      formData.append("uniqueKey", uniqueKey);
 
-      console.log("发送上传图片请求");
+      console.log("发送上传图片请求，uniqueKey:", uniqueKey);
       const response = await axios.post(`${BASE_URL}/images/upload`, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
-          // 这里需要添加 token，从登录后的存储中获取
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
       });
 
+      // 修正响应码判断
       if (response.data.code === 200) {
+        // 从 200 改为 0
         console.log("图片上传成功");
         return response.data;
       } else {
-        throw new Error(response.data.error || "上传失败");
+        throw new Error(response.data.msg || "上传失败"); // 使用接口定义的 msg 字段
       }
     } catch (error) {
       console.error("添加图片失败:", error.response?.data || error.message);
@@ -163,6 +169,43 @@ export const imageApi = {
       return response.data;
     } catch (error) {
       console.error("同步图片失败:", error);
+      throw error;
+    }
+  },
+
+  // 图搜图功能
+  async searchImage(imageFile, num = 5) {
+    try {
+      console.log("准备发送图搜图请求:", {
+        fileName: imageFile.name,
+        fileSize: imageFile.size,
+        resultCount: num,
+      });
+
+      // 创建 FormData 对象
+      const formData = new FormData();
+      formData.append("img", imageFile);
+      formData.append("num", num);
+
+      console.log("发送图搜图请求到后端...");
+      const response = await axios.post(`${BASE_URL}/search/image`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      });
+
+      if (response.data.code === 200) {
+        console.log(
+          "图搜图请求成功，获取到结果数量:",
+          response.data.data.ranklist.length
+        );
+        return response.data;
+      } else {
+        throw new Error(response.data.error || "搜索失败");
+      }
+    } catch (error) {
+      console.error("图搜图请求失败:", error.response?.data || error.message);
       throw error;
     }
   },

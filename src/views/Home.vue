@@ -27,6 +27,7 @@ const libraryPath = ref("");
 const previewImage = ref("");
 const uploadedFileName = ref("");
 const showPreview = ref(false);
+const uploadedFile = ref(null);
 const recentSearches = ref([
   {
     id: 1,
@@ -62,6 +63,9 @@ const handleFileChange = async (file) => {
   }
 
   try {
+    // 保存文件对象
+    uploadedFile.value = file.raw;
+
     // 使用 FileReader 读取文件
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -111,10 +115,14 @@ const startSearch = () => {
     return;
   }
 
-  if (!previewImage.value) {
+  if (!previewImage.value || !uploadedFile.value) {
     ElMessage.warning("请先上传要搜索的图片");
     return;
   }
+
+  console.log("开始搜索，准备跳转到结果页面...");
+  console.log("- 搜索图片:", uploadedFileName.value);
+  console.log("- 图片大小:", Math.round(uploadedFile.value.size / 1024), "KB");
 
   // 添加到搜索历史
   addToRecentSearches({
@@ -130,6 +138,9 @@ const startSearch = () => {
     query: {
       image: previewImage.value,
       library: libraryPath.value,
+    },
+    state: {
+      searchFile: uploadedFile.value,
     },
   });
 };
