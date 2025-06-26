@@ -1,7 +1,8 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { imageApi } from "../api/imageApi";
-import path from "path";
+import { useUserStore } from "../stores/user";
+import { generateUniqueKey, normalizeFilePath } from "../api/imageApi";
 
 export const useImageLibraryStore = defineStore("imageLibrary", {
   state: () => ({
@@ -354,20 +355,67 @@ export const useImageLibraryStore = defineStore("imageLibrary", {
 
     // 同步到后端
     async syncToBackend(changes) {
-      try {
-        console.log("开始同步到后端...");
+      if (!changes.added.length && !changes.removed.length) {
+        console.log("没有变更需要同步到后端");
+        return;
+      }
 
-        // 处理新增的图片
-        if (changes.added.length > 0) {
-          console.log("同步新增操作到后端...");
-          // 转换为上传接口需要的格式，并读取文件内容
+      this.isSyncing = true;
+      console.log("开始同步到后端...");
+
+      const userStore = useUserStore();
+      const { added, removed } = changes;
+
+      try {
+        // 处理删除的图片
+        if (removed.length > 0) {
+          console.log("开始同步删除操作到后端...");
+
+          // 准备批量删除的数据
+          const imagesToRemove = await Promise.all(
+            removed.map(async (imageInfo) => {
+              // 确保fileName存在，并提供后备方案
+              const fileName =
+                imageInfo.fileName || imageInfo.filePath.split(/[\\/]/).pop();
+              // 删除操作需要 uniqueKey，从已有信息重新生成
+              const uniqueKey = await generateUniqueKey(
+                fileName,
+                imageInfo.size,
+                imageInfo.modifiedTime
+              );
+
+              return {
+                uniqueKey,
+                imgName: fileName,
+                dir: imageInfo.filePath.substring(
+                  0,
+                  Math.max(
+                    imageInfo.filePath.lastIndexOf("/"),
+                    imageInfo.filePath.lastIndexOf("\\")
+                  )
+                ),
+                userId: userStore.userId,
+              };
+            })
+          );
+
+          console.log("准备删除的图片数据:", imagesToRemove);
+          // 调用批量删除接口
+          await imageApi.deleteImages(imagesToRemove);
+          console.log("删除操作同步完成");
+        }
+
+        // 处理新增和更新的图片
+        if (added.length > 0) {
+          console.log("开始同步新增操作到后端...");
+
+          // 准备批量添加的数据
           const imagesToAdd = await Promise.all(
-            changes.added.map(async (image) => {
+            added.map(async (imageInfo) => {
               try {
-                console.log("读取图片文件:", image.filePath);
-                // 使用electronAPI读取文件
+                // 读取文件内容
                 const fileData = await window.electronAPI.readImageFile(
-                  image.filePath
+                  imageInfo.filePath
                 );
 
                 // 创建File对象
@@ -376,42 +424,54 @@ export const useImageLibraryStore = defineStore("imageLibrary", {
                   lastModified: fileData.metadata.lastModified,
                 });
 
-                return {
-                  fileName: image.fileName,
-                  filePath: image.filePath,
-                  file: file, // 现在包含了实际的文件对象
-                  size: image.size,
-                  modifiedTime: image.modifiedTime,
-                  createdTime: image.createdTime,
+                // 构造addImage所需的数据
+                const imageData = {
+                  ...imageInfo,
+                  file,
+                  dir: imageInfo.filePath.substring(
+                    0,
+                    Math.max(
+                      imageInfo.filePath.lastIndexOf("/"),
+                      imageInfo.filePath.lastIndexOf("\\")
+                    )
+                  ), // 修正dir的值
+                  userId: userStore.userId,
                 };
+                return imageData;
               } catch (error) {
-                console.error(`读取图片失败 ${image.filePath}:`, error);
-                throw error;
+                console.error(
+                  `读取文件失败，跳过同步: ${imageInfo.filePath}`,
+                  error
+                );
+                return null;
               }
             })
           );
 
-          console.log("准备上传图片，已读取文件内容:", imagesToAdd);
-          const addResult = await imageApi.addImages(imagesToAdd);
-          console.log("新增操作结果:", addResult);
+          // 过滤掉读取失败的项目
+          const validImagesToAdd = imagesToAdd.filter(Boolean);
+
+          if (validImagesToAdd.length > 0) {
+            console.log("准备上传的图片数据:", validImagesToAdd);
+            // 调用批量添加接口
+            await imageApi.addImages(validImagesToAdd);
+            console.log("新增操作同步完成");
+          }
         }
 
-        // 处理删除的图片
-        if (changes.removed.length > 0) {
-          console.log("同步删除操作到后端...");
-          const imagesToDelete = changes.removed.map((image) => ({
-            fileName: image.fileName || path.basename(image.filePath),
-            filePath: image.filePath,
-          }));
-          const deleteResult = await imageApi.deleteImages(imagesToDelete);
-          console.log("删除操作结果:", deleteResult);
-        }
-
-        console.log("后端同步完成");
+        this.libraryStats.lastUpdate = Date.now();
+        console.log("后端同步成功");
       } catch (error) {
         console.error("同步到后端失败:", error);
-        throw error;
+        this.error = error.message;
+      } finally {
+        this.isSyncing = false;
       }
+    },
+
+    // 辅助函数：根据文件路径获取文件名
+    getFileName(filePath) {
+      return filePath.split(/[\\/]/).pop();
     },
   },
 });

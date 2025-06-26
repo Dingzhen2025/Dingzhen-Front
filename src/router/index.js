@@ -40,6 +40,12 @@ const routes = [
         meta: { requiresAuth: true },
       },
       {
+        path: "search-result",
+        name: "SearchResult",
+        component: () => import("@/views/SearchResult.vue"),
+        meta: { requiresAuth: true, title: "搜索结果" },
+      },
+      {
         path: "history",
         name: "History",
         component: () => import("@/views/History.vue"),

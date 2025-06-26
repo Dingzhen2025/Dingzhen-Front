@@ -154,30 +154,53 @@ const filteredResults = computed(() => {
 
 // 执行搜索
 const performSearch = async () => {
+  // 从路由状态获取搜索图片文件和图片库路径
+  const searchFile = history.state.searchFile;
+  const libraryPath = route.query.library;
+
+  if (!searchFile || !(searchFile instanceof File)) {
+    ElMessage.error("未找到有效的搜索图片，请返回重试");
+    console.error("无法从路由状态获取搜索文件:", history.state);
+    loading.value = false;
+    return;
+  }
+
+  if (!libraryPath) {
+    ElMessage.error("未找到图片库路径，请返回重试");
+    console.error("无法从路由查询获取图片库路径:", route.query);
+    loading.value = false;
+    return;
+  }
+
   try {
     loading.value = true;
     const startTime = Date.now();
+    console.log("开始使用以下文件进行搜索:", searchFile);
 
-    // 从路由状态获取搜索图片
-    const searchImage = route.query.image;
-    console.log("route:", route);
-    if (!searchImage) {
-      throw new Error("未找到要搜索的图片");
+    // 调用搜索API，传递File对象和图片库路径
+    const response = await imageApi.searchImage(searchFile, libraryPath, 10);
+
+    console.log("图搜图接口返回:", response);
+
+    // 严格按照接口文档处理返回结果 (data.results)
+    if (response && response.code === 200 && response.data?.results) {
+      searchResults.value = response.data.results;
+      totalResults.value = response.data.results.length;
+    } else {
+      // 如果返回结果不符合预期，则清空结果并提示
+      searchResults.value = [];
+      totalResults.value = 0;
+      ElMessage.warning(response.msg || "未找到任何相似图片");
     }
 
-    // 调用搜索API
-    const response = await imageApi.searchImage(searchImage, 10);
-
-    console.log("返回值：",response);
-    // 处理搜索结果
-    searchResults.value = response.data.ranklist;
-    totalResults.value = response.data.ranklist.length;
     searchTime.value = Date.now() - startTime;
-
     console.log("搜索完成，结果:", searchResults.value);
   } catch (error) {
-    ElMessage.error(error.message || "搜索失败");
-    console.error("搜索错误:", error);
+    ElMessage.error(error.message || "搜索失败，请检查网络或联系管理员");
+    console.error("搜索过程发生错误:", error);
+    // 确保出错时清空结果
+    searchResults.value = [];
+    totalResults.value = 0;
   } finally {
     loading.value = false;
   }
@@ -214,6 +237,7 @@ const downloadImage = async (result) => {
 
 // 组件挂载时执行搜索
 onMounted(() => {
+  // 等待DOM挂载后执行搜索
   performSearch();
 });
 </script>
