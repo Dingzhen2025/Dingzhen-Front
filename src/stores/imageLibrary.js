@@ -49,48 +49,64 @@ export const useImageLibraryStore = defineStore("imageLibrary", {
     },
 
     // 初始化文件监控
-    initializeFileWatcher() {
+    async initializeFileWatcher() {
       if (!window.electronAPI) return;
 
       // 启动文件监控
       window.electronAPI.startWatching(this.currentLibraryPath);
       this.setWatchingStatus(true);
 
-      // 监听文件添加
-      window.electronAPI.onFileAdded((data) => {
-        const { filePath, imageInfo } = data;
-        this.tempHashTable[filePath] = {
-          fileName: imageInfo.fileName,
-          size: imageInfo.size,
-          modifiedTime: imageInfo.modifiedTime,
-          createdTime: imageInfo.createdTime,
+      const handleFileChange = async (filePath, imageInfo) => {
+        const uniqueKey = await generateUniqueKey(
+          imageInfo.fileName,
+          imageInfo.size,
+          imageInfo.modifiedTime
+        );
+        this.tempHashTable[uniqueKey] = {
+          filePath,
+          ...imageInfo,
         };
         this.compareAndUpdateHashTables();
+      };
+
+      // 监听文件添加
+      window.electronAPI.onFileAdded(async (data) => {
+        console.log("文件监控：新增文件", data.filePath);
+        await handleFileChange(data.filePath, data.imageInfo);
       });
 
       // 监听文件修改
-      window.electronAPI.onFileModified((data) => {
-        const { filePath, imageInfo } = data;
-        this.tempHashTable[filePath] = {
-          fileName: imageInfo.fileName,
-          size: imageInfo.size,
-          modifiedTime: imageInfo.modifiedTime,
-          createdTime: imageInfo.createdTime,
-        };
-        this.compareAndUpdateHashTables();
+      window.electronAPI.onFileModified(async (data) => {
+        // 在内部逻辑中，修改视为删除旧key，增加新key
+        console.log("文件监控：修改文件", data.filePath);
+        // 先找到旧的key并删除
+        const oldKey = Object.keys(this.tempHashTable).find(
+          (key) => this.tempHashTable[key].filePath === data.filePath
+        );
+        if (oldKey) {
+          delete this.tempHashTable[oldKey];
+        }
+        await handleFileChange(data.filePath, data.imageInfo);
       });
 
       // 监听文件删除
       window.electronAPI.onFileDeleted((filePath) => {
-        delete this.tempHashTable[filePath];
-        this.compareAndUpdateHashTables();
+        console.log("文件监控：删除文件", filePath);
+        const keyToDelete = Object.keys(this.tempHashTable).find(
+          (key) => this.tempHashTable[key].filePath === filePath
+        );
+        if (keyToDelete) {
+          delete this.tempHashTable[keyToDelete];
+          this.compareAndUpdateHashTables();
+        }
       });
 
       // 监听目录删除
       window.electronAPI.onDirectoryDeleted((dirPath) => {
-        Object.keys(this.tempHashTable).forEach((filePath) => {
-          if (filePath.startsWith(dirPath)) {
-            delete this.tempHashTable[filePath];
+        console.log("文件监控：删除目录", dirPath);
+        Object.keys(this.tempHashTable).forEach((key) => {
+          if (this.tempHashTable[key].filePath.startsWith(dirPath)) {
+            delete this.tempHashTable[key];
           }
         });
         this.compareAndUpdateHashTables();
@@ -115,7 +131,16 @@ export const useImageLibraryStore = defineStore("imageLibrary", {
         this.libraryStats.status = "处理中";
         if (window.electronAPI) {
           const storedData = await window.electronAPI.getStoredImages();
-          this.persistentHashTable = storedData || {};
+          // 检查是否为旧格式（key为路径），如果是，则清空以强制重新同步
+          const firstKey = Object.keys(storedData || {})[0];
+          if (firstKey && (firstKey.includes("/") || firstKey.includes("\\"))) {
+            console.log(
+              "检测到旧版本地缓存格式，将进行一次性全量同步来完成升级。"
+            );
+            this.persistentHashTable = {};
+          } else {
+            this.persistentHashTable = storedData || {};
+          }
         }
       } catch (error) {
         console.error("初始化持久化哈希表失败:", error);
@@ -153,15 +178,21 @@ export const useImageLibraryStore = defineStore("imageLibrary", {
             throw new Error("获取图片信息失败");
           }
 
-          // 将结果存入临时哈希表
-          Object.entries(imageInfoMap).forEach(([filePath, imageInfo]) => {
-            this.tempHashTable[filePath] = {
-              fileName: imageInfo.fileName,
-              size: imageInfo.size,
-              modifiedTime: imageInfo.modifiedTime,
-              createdTime: imageInfo.createdTime,
+          const newTempHashTable = {};
+          // 使用 for...of 循环来正确处理异步操作
+          for (const [filePath, imageInfo] of Object.entries(imageInfoMap)) {
+            const uniqueKey = await generateUniqueKey(
+              imageInfo.fileName,
+              imageInfo.size,
+              imageInfo.modifiedTime
+            );
+            newTempHashTable[uniqueKey] = {
+              filePath,
+              ...imageInfo,
             };
-          });
+          }
+          this.tempHashTable = newTempHashTable;
+
           console.log(
             "临时哈希表更新完成，图片数量:",
             Object.keys(this.tempHashTable).length
@@ -230,7 +261,7 @@ export const useImageLibraryStore = defineStore("imageLibrary", {
       };
 
       try {
-        console.log("开始比对哈希表...");
+        console.log("开始比对哈希表 (基于uniqueKey)...");
         console.log(
           "临时哈希表中的图片数量:",
           Object.keys(this.tempHashTable).length
@@ -240,40 +271,25 @@ export const useImageLibraryStore = defineStore("imageLibrary", {
           Object.keys(this.persistentHashTable).length
         );
 
-        // 检查新增和需要更新的图片
-        Object.entries(this.tempHashTable).forEach(([filePath, imageInfo]) => {
-          const existingInfo = this.persistentHashTable[filePath];
-          const newImageInfo = {
-            filePath,
-            fileName: imageInfo.fileName,
-            size: imageInfo.size,
-            modifiedTime: imageInfo.modifiedTime,
-            createdTime: imageInfo.createdTime,
-          };
+        const tempKeys = new Set(Object.keys(this.tempHashTable));
+        const persistentKeys = new Set(Object.keys(this.persistentHashTable));
 
-          if (!existingInfo) {
-            console.log("发现新增图片:", filePath);
-            changes.added.push(newImageInfo);
-          } else if (
-            existingInfo.modifiedTime !== imageInfo.modifiedTime ||
-            existingInfo.size !== imageInfo.size
-          ) {
-            // 将更新操作转换为删除+新增
-            console.log("发现图片信息不同，需要更新:", filePath);
-            console.log("- 旧信息:", JSON.stringify(existingInfo));
-            console.log("- 新信息:", JSON.stringify(newImageInfo));
-            changes.removed.push({ filePath }); // 先删除旧图片
-            changes.added.push(newImageInfo); // 再添加新图片
+        // 检查新增的图片 (存在于temp，但不存在于persistent)
+        for (const key of tempKeys) {
+          if (!persistentKeys.has(key)) {
+            changes.added.push({ uniqueKey: key, ...this.tempHashTable[key] });
           }
-        });
+        }
 
-        // 检查删除的图片
-        Object.keys(this.persistentHashTable).forEach((filePath) => {
-          if (!this.tempHashTable[filePath]) {
-            console.log("发现删除图片:", filePath);
-            changes.removed.push({ filePath });
+        // 检查删除的图片 (存在于persistent，但不存在于temp)
+        for (const key of persistentKeys) {
+          if (!tempKeys.has(key)) {
+            changes.removed.push({
+              uniqueKey: key,
+              ...this.persistentHashTable[key],
+            });
           }
-        });
+        }
 
         if (changes.added.length || changes.removed.length) {
           console.log("检测到变更，详细信息：");
@@ -313,21 +329,20 @@ export const useImageLibraryStore = defineStore("imageLibrary", {
 
         // 先处理删除的图片
         changes.removed.forEach((image) => {
-          console.log("从本地存储中删除图片:", image.filePath);
-          delete this.persistentHashTable[image.filePath];
+          const keyToDelete = Object.keys(this.persistentHashTable).find(
+            (key) => this.persistentHashTable[key].filePath === image.filePath
+          );
+          if (keyToDelete) {
+            console.log("从本地存储中删除图片:", image.filePath);
+            delete this.persistentHashTable[keyToDelete];
+          }
         });
 
         // 再处理新增的图片
-        changes.added.forEach((image) => {
+        for (const image of changes.added) {
           console.log("向本地存储添加图片:", image.filePath);
-          const imageInfo = {
-            fileName: image.fileName,
-            size: image.size,
-            modifiedTime: image.modifiedTime,
-            createdTime: image.createdTime,
-          };
-          this.persistentHashTable[image.filePath] = imageInfo;
-        });
+          this.persistentHashTable[image.uniqueKey] = image;
+        }
 
         // 保存到 electron-store
         if (window.electronAPI) {
@@ -371,33 +386,24 @@ export const useImageLibraryStore = defineStore("imageLibrary", {
         if (removed.length > 0) {
           console.log("开始同步删除操作到后端...");
 
-          // 准备批量删除的数据
-          const imagesToRemove = await Promise.all(
-            removed.map(async (imageInfo) => {
-              // 确保fileName存在，并提供后备方案
-              const fileName =
-                imageInfo.fileName || imageInfo.filePath.split(/[\\/]/).pop();
-              // 删除操作需要 uniqueKey，从已有信息重新生成
-              const uniqueKey = await generateUniqueKey(
-                fileName,
-                imageInfo.size,
-                imageInfo.modifiedTime
-              );
-
-              return {
-                uniqueKey,
-                imgName: fileName,
-                dir: imageInfo.filePath.substring(
-                  0,
-                  Math.max(
-                    imageInfo.filePath.lastIndexOf("/"),
-                    imageInfo.filePath.lastIndexOf("\\")
-                  )
-                ),
-                userId: userStore.userId,
-              };
-            })
-          );
+          // 准备批量删除的数据，直接使用传递过来的uniqueKey
+          const imagesToRemove = removed.map((imageInfo) => {
+            // 确保fileName存在，并提供后备方案
+            const fileName =
+              imageInfo.fileName || imageInfo.filePath.split(/[\\/]/).pop();
+            return {
+              uniqueKey: imageInfo.uniqueKey,
+              imgName: fileName,
+              dir: imageInfo.filePath.substring(
+                0,
+                Math.max(
+                  imageInfo.filePath.lastIndexOf("/"),
+                  imageInfo.filePath.lastIndexOf("\\")
+                )
+              ),
+              userId: userStore.userId,
+            };
+          });
 
           console.log("准备删除的图片数据:", imagesToRemove);
           // 调用批量删除接口

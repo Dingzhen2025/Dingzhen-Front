@@ -36,13 +36,12 @@ export const imageApi = {
       if (!imageData.fileName || !imageData.file) {
         throw new Error("缺少必要的参数：fileName或file");
       }
+      if (!imageData.uniqueKey) {
+        throw new Error("缺少必要的参数：uniqueKey");
+      }
 
-      // 生成uniqueKey
-      const uniqueKey = await generateUniqueKey(
-        imageData.fileName,
-        imageData.file.size,
-        imageData.file.lastModified
-      );
+      // uniqueKey 现在由调用方提供，不再在此处生成
+      const uniqueKey = imageData.uniqueKey;
 
       // 创建 FormData 对象
       const formData = new FormData();
@@ -91,20 +90,16 @@ export const imageApi = {
 
       // 处理每个图片的删除请求
       const deletePromises = imageArray.map(async (image) => {
-        // 验证必要参数
-        if (!image.imgName && !image.fileName) {
-          throw new Error(
-            `缺少必要的参数：imgName或fileName，图片信息：${JSON.stringify(
-              image
-            )}`
-          );
+        if (!image.uniqueKey) {
+          throw new Error(`删除操作缺少必需的 uniqueKey 参数`);
         }
-        // 构造FormData参数
+
+        // 严格参考 addImage 接口，使用 FormData 进行表单提交
         const formData = new FormData();
         formData.append("uniqueKey", image.uniqueKey);
         formData.append("imgName", image.imgName || image.fileName);
         formData.append("dev", image.dev || "development");
-        formData.append("dir", image.dir);
+        formData.append("dir", normalizeFilePath(image.dir || ""));
         formData.append("userId", String(image.userId));
 
         console.log(
@@ -112,7 +107,7 @@ export const imageApi = {
           Object.fromEntries(formData.entries())
         );
 
-        // 发送删除请求
+        // 发送POST请求
         const response = await axios.post(
           `${BASE_URL}/images/remove`,
           formData,
@@ -239,6 +234,7 @@ export const imageApi = {
       formData.append("userId", userStore.userId.toString());
 
       console.log("发送图搜图请求...");
+      console.log("请求参数：", formData);
       const response = await axios.post(`${BASE_URL}/images/query`, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
@@ -310,6 +306,52 @@ export const imageApi = {
     } catch (error) {
       console.error("搜索失败:", error);
       throw new Error(error.response?.data?.msg || error.message || "搜索失败");
+    }
+  },
+
+  async updateLocalStorage(changes) {
+    try {
+      console.log("开始更新本地存储...");
+
+      // 先处理删除的图片
+      changes.removed.forEach((image) => {
+        const keyToDelete = Object.keys(this.persistentHashTable).find(
+          (key) => this.persistentHashTable[key].filePath === image.filePath
+        );
+        if (keyToDelete) {
+          console.log("从本地存储中删除图片:", image.filePath);
+          delete this.persistentHashTable[keyToDelete];
+        }
+      });
+
+      // 再处理新增的图片
+      for (const image of changes.added) {
+        console.log("向本地存储添加图片:", image.filePath);
+        // 直接使用 image 对象中的 uniqueKey，不再重新生成
+        this.persistentHashTable[image.uniqueKey] = image;
+      }
+
+      // 保存到 electron-store
+      if (window.electronAPI) {
+        const persistentData = JSON.parse(
+          JSON.stringify(this.persistentHashTable)
+        );
+        await window.electronAPI.saveImages(persistentData);
+      }
+
+      // 更新统计信息
+      this.libraryStats.totalImages = Object.keys(
+        this.persistentHashTable
+      ).length;
+      this.libraryStats.lastUpdate = Date.now();
+
+      console.log(
+        "本地存储更新完成，当前图片总数:",
+        this.libraryStats.totalImages
+      );
+    } catch (error) {
+      console.error("更新本地存储失败:", error);
+      throw error;
     }
   },
 };
