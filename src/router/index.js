@@ -34,12 +34,6 @@ const routes = [
         meta: { title: "主页", requiresAuth: true },
       },
       {
-        path: "search",
-        name: "Search",
-        component: () => import("@/views/Search.vue"),
-        meta: { requiresAuth: true },
-      },
-      {
         path: "search-result",
         name: "SearchResult",
         component: () => import("@/views/SearchResult.vue"),
