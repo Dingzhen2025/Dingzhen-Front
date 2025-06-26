@@ -1,11 +1,27 @@
 import axios from "axios";
 
-const BASE_URL = "http://8.138.83.109:8080"; // 后端服务器地址
+const BASE_URL = "http://47.107.172.202:8080"; // 后端服务器地址
 
 // 处理文件路径，将Windows路径转换为URL安全的格式
 function normalizeFilePath(filePath) {
   // 将Windows路径中的反斜杠转换为正斜杠
   return filePath.replace(/\\/g, "/");
+}
+
+// 生成uniqueKey的函数
+async function generateUniqueKey(fileName, fileSize, lastModified) {
+  // 将文件信息组合成一个字符串
+  const fileInfo = `${fileName}_${fileSize}_${lastModified}`;
+  // 使用Web Crypto API生成哈希
+  const encoder = new TextEncoder();
+  const data = encoder.encode(fileInfo);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  // 将ArrayBuffer转换为十六进制字符串，只取前32位
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray
+    .slice(0, 16)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 export const imageApi = {
@@ -14,18 +30,28 @@ export const imageApi = {
     try {
       console.log("准备上传图片:", imageData);
 
+      // 验证必要参数
+      if (!imageData.fileName || !imageData.file) {
+        throw new Error("缺少必要的参数：fileName或file");
+      }
+
+      // 生成uniqueKey
+      const uniqueKey = await generateUniqueKey(
+        imageData.fileName,
+        imageData.file.size,
+        imageData.file.lastModified
+      );
+
       // 创建 FormData 对象
       const formData = new FormData();
-      formData.append("imgName", imageData.fileName);
-      formData.append("img", imageData.file);
-      formData.append("dev", "1bdjwqdwq"); // 可选参数
-      formData.append("dir", normalizeFilePath(imageData.filePath)); // 可选参数
-      formData.append("userId", "1"); // 修正参数名为 userId
-      // 生成唯一键（使用时间戳+随机数）
-      const uniqueKey = `${Date.now()}_${Math.random()
-        .toString(36)
-        .substr(2, 9)}`;
+
+      // 按照接口文档添加必要参数
       formData.append("uniqueKey", uniqueKey);
+      formData.append("imgName", imageData.fileName);
+      formData.append("img", imageData.file); // 二进制文件
+      formData.append("dev", "development"); // 可选参数
+      formData.append("dir", normalizeFilePath(imageData.filePath)); // 可选参数
+      formData.append("userId", "45"); // 用户ID
 
       console.log("发送上传图片请求，uniqueKey:", uniqueKey);
       const response = await axios.post(`${BASE_URL}/images/upload`, formData, {
@@ -35,13 +61,17 @@ export const imageApi = {
         },
       });
 
-      // 修正响应码判断
-      if (response.data.code === 200) {
-        // 从 200 改为 0
-        console.log("图片上传成功");
-        return response.data;
+      // 按照接口文档验证响应
+      if (response.data.code === 0) {
+        // 成功状态码为0
+        console.log("图片上传成功:", response.data);
+        return {
+          code: response.data.code,
+          msg: response.data.msg || "",
+          data: response.data.data || null,
+        };
       } else {
-        throw new Error(response.data.msg || "上传失败"); // 使用接口定义的 msg 字段
+        throw new Error(response.data.msg || "上传失败");
       }
     } catch (error) {
       console.error("添加图片失败:", error.response?.data || error.message);
@@ -49,67 +79,70 @@ export const imageApi = {
     }
   },
 
-  // 删除图片记录
-  async deleteImage(imageInfo) {
-    try {
-      console.log("准备删除图片:", imageInfo);
-
-      // 准备删除请求的数据
-      const formData = new FormData();
-      formData.append("imgName", imageInfo.fileName);
-      formData.append("dev", "1bdjwqdwq"); // 设备标识
-      formData.append("dir", normalizeFilePath(imageInfo.filePath));
-      formData.append("userid", "1"); // 用户ID
-
-      console.log("发送删除图片请求");
-      const response = await axios.post(`${BASE_URL}/images/remove`, formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          // 这里需要添加 token，从登录后的存储中获取
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      });
-
-      if (response.data.code === 200) {
-        console.log("图片删除成功");
-        return response.data;
-      } else {
-        throw new Error(response.data.error || "删除失败");
-      }
-    } catch (error) {
-      console.error("删除图片失败:", error.response?.data || error.message);
-      throw error;
-    }
-  },
-
-  // 批量删除图片记录
+  // 删除图片接口
   async deleteImages(images) {
     try {
-      console.log("开始批量删除图片...");
-      const results = await Promise.allSettled(
-        images.map((image) => this.deleteImage(image))
-      );
+      console.log("准备删除图片:", images);
 
-      // 检查结果
-      results.forEach((result, index) => {
-        if (result.status === "rejected") {
-          console.error(
-            `删除图片失败 ${images[index].filePath}:`,
-            result.reason
+      // 确保images是数组
+      const imageArray = Array.isArray(images) ? images : [images];
+
+      // 处理每个图片的删除请求
+      const deletePromises = imageArray.map(async (image) => {
+        // 验证必要参数
+        if (!image.fileName || !image.filePath) {
+          throw new Error(
+            `缺少必要的参数：fileName或filePath，图片信息：${JSON.stringify(
+              image
+            )}`
           );
+        }
+
+        // 构造请求参数
+        const params = {
+          uniqueKey:
+            image.uniqueKey ||
+            (await generateUniqueKey(
+              image.fileName,
+              image.size || 0,
+              image.lastModified || Date.now()
+            )),
+          imgName: image.fileName,
+          dev: "development",
+          dir: normalizeFilePath(image.filePath),
+          userId: 45, // 注意：这里的userId需要是整数类型
+        };
+
+        console.log("发送删除图片请求，参数:", params);
+
+        // 发送删除请求
+        const response = await axios.post(`${BASE_URL}/images/remove`, params, {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        });
+
+        // 处理响应
+        if (response.data.code === 200) {
+          // 成功状态码为200
+          console.log("图片删除成功:", response.data);
+          return {
+            code: response.data.code,
+            msg: response.data.msg || "success",
+            data: response.data.data || null,
+          };
+        } else {
+          throw new Error(response.data.msg || "删除失败");
         }
       });
 
-      return {
-        success: true,
-        results: results.map((result, index) => ({
-          filePath: images[index].filePath,
-          success: result.status === "fulfilled",
-          error: result.status === "rejected" ? result.reason.message : null,
-        })),
-      };
+      // 等待所有删除请求完成
+      const results = await Promise.all(deletePromises);
+      console.log("所有图片删除完成:", results);
+      return results;
     } catch (error) {
-      console.error("批量删除图片失败:", error);
+      console.error("删除图片失败:", error);
       throw error;
     }
   },
@@ -173,7 +206,7 @@ export const imageApi = {
     }
   },
 
-  // 图搜图功能
+  // 图搜图接口
   async searchImage(imageFile, num = 5) {
     try {
       console.log("准备发送图搜图请求:", {
@@ -182,12 +215,21 @@ export const imageApi = {
         resultCount: num,
       });
 
+      // 验证参数
+      if (!imageFile || !(imageFile instanceof File)) {
+        throw new Error("无效的图片文件");
+      }
+
+      if (!imageFile.type.startsWith("image/")) {
+        throw new Error("文件类型必须是图片");
+      }
+
       // 创建 FormData 对象
       const formData = new FormData();
-      formData.append("img", imageFile);
-      formData.append("num", num);
+      formData.append("img", imageFile); // 二进制文件
+      formData.append("num", num); // 指定返回图片数量
 
-      console.log("发送图搜图请求到后端...");
+      console.log("发送图搜图请求...");
       const response = await axios.post(`${BASE_URL}/search/image`, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
@@ -195,17 +237,30 @@ export const imageApi = {
         },
       });
 
+      // 处理响应
       if (response.data.code === 200) {
-        console.log(
-          "图搜图请求成功，获取到结果数量:",
-          response.data.data.ranklist.length
-        );
-        return response.data;
+        console.log("图搜图请求成功:", response.data);
+
+        // 处理返回的数据
+        const searchResults = response.data.data.ranklist.map((item) => ({
+          imgName: item.imgName,
+          path: item.path,
+          dev: item.dev,
+          url: item.url, // 预览图地址
+        }));
+
+        return {
+          code: response.data.code,
+          msg: response.data.msg || "success",
+          data: {
+            ranklist: searchResults,
+          },
+        };
       } else {
-        throw new Error(response.data.error || "搜索失败");
+        throw new Error(response.data.msg || "搜索失败");
       }
     } catch (error) {
-      console.error("图搜图请求失败:", error.response?.data || error.message);
+      console.error("图搜图失败:", error.response?.data || error.message);
       throw error;
     }
   },
