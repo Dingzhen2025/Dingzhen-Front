@@ -62,7 +62,7 @@ export const imageApi = {
       });
 
       // 按照接口文档验证响应
-      if (response.data.code === 0) {
+      if (response.data.code === 200) {
         // 成功状态码为0
         console.log("图片上传成功:", response.data);
         return {

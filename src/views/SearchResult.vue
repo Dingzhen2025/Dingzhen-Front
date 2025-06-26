@@ -159,7 +159,8 @@ const performSearch = async () => {
     const startTime = Date.now();
 
     // 从路由状态获取搜索图片
-    const searchImage = route.params.searchImage;
+    const searchImage = route.query.image;
+    console.log("route:", route);
     if (!searchImage) {
       throw new Error("未找到要搜索的图片");
     }
@@ -167,6 +168,7 @@ const performSearch = async () => {
     // 调用搜索API
     const response = await imageApi.searchImage(searchImage, 10);
 
+    console.log("返回值：",response);
     // 处理搜索结果
     searchResults.value = response.data.ranklist;
     totalResults.value = response.data.ranklist.length;
