@@ -11,13 +11,13 @@
         <el-form
           ref="loginForm"
           :model="loginData"
-          :rules="loginRules"
+          :rules="rules"
           @keyup.enter="handleLogin"
         >
-          <el-form-item prop="username">
+          <el-form-item prop="account">
             <el-input
-              v-model="loginData.username"
-              placeholder="用户名"
+              v-model="loginData.account"
+              placeholder="请输入账号"
               :prefix-icon="User"
             />
           </el-form-item>
@@ -26,7 +26,7 @@
             <el-input
               v-model="loginData.password"
               type="password"
-              placeholder="密码"
+              placeholder="请输入密码"
               :prefix-icon="Lock"
               show-password
             />
@@ -44,7 +44,7 @@
               class="login-button"
               @click="handleLogin"
             >
-              登录
+              {{ loading ? "登录中..." : "登录" }}
             </el-button>
           </el-form-item>
         </el-form>
@@ -59,14 +59,7 @@
     </div>
 
     <footer class="login-footer">
-      <p>© 2025 图搜图系统 版权所有</p>
-      <div class="footer-links">
-        <el-link type="info" underline="never">隐私政策</el-link>
-        <el-divider direction="vertical" />
-        <el-link type="info" underline="never">用户协议</el-link>
-        <el-divider direction="vertical" />
-        <el-link type="info" underline="never">帮助中心</el-link>
-      </div>
+      <p>© 2024 图搜图系统 版权所有</p>
     </footer>
 
     <!-- 背景动画 -->
@@ -78,60 +71,102 @@
 </template>
 
 <script setup>
-import { ref, reactive } from "vue";
-import { useRouter } from "vue-router";
+import { ref, onMounted } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import { User, Lock } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
+import { userApi } from "../api/userApi";
+import { useUserStore } from "../stores/user";
 
+// 获取路由实例
 const router = useRouter();
-const loading = ref(false);
+const route = useRoute();
+
+// 获取用户store
+const userStore = useUserStore();
+
+// 表单ref
 const loginForm = ref(null);
 
-const loginData = reactive({
-  username: "",
+// 登录数据
+const loginData = ref({
+  account: "",
   password: "",
   remember: false,
 });
 
-const loginRules = {
-  username: [
-    { required: true, message: "请输入用户名", trigger: "blur" },
-    { min: 3, max: 20, message: "长度在 3 到 20 个字符", trigger: "blur" },
-  ],
-  password: [
-    { required: true, message: "请输入密码", trigger: "blur" },
-    { min: 6, max: 20, message: "长度在 6 到 20 个字符", trigger: "blur" },
-  ],
-};
+// 加载状态
+const loading = ref(false);
 
+// 处理登录
 const handleLogin = async () => {
   if (!loginForm.value) return;
 
   try {
+    // 表单验证
     await loginForm.value.validate();
     loading.value = true;
 
-    // 模拟登录请求
-    setTimeout(async () => {
-      loading.value = false;
-      ElMessage.success("登录成功");
+    // 调用登录接口
+    const userData = await userApi.login({
+      account: loginData.value.account.trim(),
+      password: loginData.value.password,
+    });
 
-      // 使用 await 等待路由跳转完成
-      try {
-        await router.push({ path: "/main/home" });
-      } catch (error) {
-        console.error("路由跳转失败:", error);
-        ElMessage.error("页面跳转失败，请重试");
-      }
-    }, 1500);
+    // 验证返回的用户数据
+    if (!userData || !userData.userId) {
+      throw new Error("登录失败：用户数据无效");
+    }
+
+    // 如果选择记住我，保存账号信息
+    if (loginData.value.remember) {
+      localStorage.setItem("rememberedAccount", loginData.value.account);
+    } else {
+      localStorage.removeItem("rememberedAccount");
+    }
+
+    // 保存用户信息到store
+    userStore.setUserInfo(userData);
+
+    // 登录成功提示
+    ElMessage.success("登录成功");
+
+    // 获取重定向地址，默认跳转到主页
+    const redirect = route.query.redirect || "/main/home";
+    // 跳转到目标页面
+    router.push(redirect);
   } catch (error) {
-    console.error("表单验证失败", error);
+    console.error("登录失败:", error);
+    ElMessage.error(error.message || "登录失败，请检查账号密码");
+  } finally {
     loading.value = false;
   }
 };
 
+// 处理注册跳转
 const handleRegister = () => {
   router.push("/register");
+};
+
+// 在组件挂载时检查是否有记住的账号
+onMounted(() => {
+  const rememberedAccount = localStorage.getItem("rememberedAccount");
+  if (rememberedAccount) {
+    loginData.value.account = rememberedAccount;
+    loginData.value.remember = true;
+  }
+});
+
+// 表单验证规则
+const rules = {
+  account: [
+    { required: true, message: "请输入账号", trigger: "blur" },
+    { min: 3, max: 20, message: "账号长度应在3-20个字符之间", trigger: "blur" },
+  ],
+  password: [
+    { required: true, message: "请输入密码", trigger: "blur" },
+    { min: 6, max: 20, message: "密码长度应在6-20个字符之间", trigger: "blur" },
+  ],
 };
 </script>
 
@@ -242,28 +277,49 @@ const handleRegister = () => {
 }
 
 .login-footer {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 24px;
+  margin-top: 40px;
   text-align: center;
   color: rgba(255, 255, 255, 0.8);
-  z-index: 1;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.2), transparent);
-}
-
-.footer-links {
-  margin-top: 8px;
-}
-
-.footer-links :deep(.el-link) {
-  color: rgba(255, 255, 255, 0.8) !important;
   font-size: 14px;
 }
 
-.footer-links :deep(.el-divider) {
-  background-color: rgba(255, 255, 255, 0.3);
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 响应式调整 */
+@media screen and (max-width: 768px) {
+  .login-content {
+    width: calc(100% - 40px);
+    max-width: 440px;
+    padding: 30px 20px;
+    margin: 20px;
+  }
+
+  .login-header h1 {
+    font-size: 24px;
+  }
+
+  .login-header p {
+    font-size: 14px;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .login-container {
+    padding: 0;
+  }
+
+  .login-content {
+    margin: 0 20px;
+  }
 }
 
 /* 背景动画 */
@@ -320,63 +376,6 @@ const handleRegister = () => {
   }
   50% {
     opacity: 0.3;
-  }
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* 响应式调整 */
-@media screen and (max-width: 768px) {
-  .login-content {
-    width: calc(100% - 40px);
-    max-width: 440px;
-    padding: 30px 20px;
-    margin: 20px;
-  }
-
-  .login-header h1 {
-    font-size: 24px;
-  }
-
-  .login-header p {
-    font-size: 14px;
-  }
-
-  .login-footer {
-    padding: 16px;
-  }
-}
-
-/* 确保在不同分辨率下保持居中和美观 */
-@media screen and (min-height: 800px) {
-  .login-container {
-    padding: 0;
-  }
-
-  .login-content {
-    margin: 0 20px;
-  }
-}
-
-@media screen and (max-height: 600px) {
-  .login-container {
-    justify-content: flex-start;
-    padding-top: 40px;
-  }
-
-  .login-footer {
-    position: relative;
-    margin-top: 40px;
-    background: none;
   }
 }
 </style>

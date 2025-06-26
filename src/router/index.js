@@ -1,4 +1,5 @@
-import { createRouter, createWebHashHistory } from "vue-router";
+import { createRouter, createWebHistory } from "vue-router";
+import { useUserStore } from "@/stores/user";
 
 const routes = [
   {
@@ -16,6 +17,11 @@ const routes = [
     component: () => import("@/views/Login.vue"),
   },
   {
+    path: "/register",
+    name: "Register",
+    component: () => import("@/views/Register.vue"),
+  },
+  {
     path: "/main",
     name: "Layout",
     component: () => import("@/views/Layout.vue"),
@@ -25,19 +31,19 @@ const routes = [
         path: "home",
         name: "Home",
         component: () => import("@/views/Home.vue"),
-        meta: { title: "主页" },
+        meta: { title: "主页", requiresAuth: true },
       },
       {
-        path: "search-result",
-        name: "SearchResult",
-        component: () => import("@/views/SearchResult.vue"),
-        meta: { title: "搜索结果" },
+        path: "search",
+        name: "Search",
+        component: () => import("@/views/Search.vue"),
+        meta: { requiresAuth: true },
       },
       {
         path: "history",
         name: "History",
         component: () => import("@/views/History.vue"),
-        meta: { title: "搜索历史" },
+        meta: { requiresAuth: true },
       },
       {
         path: "profile",
@@ -56,7 +62,7 @@ const routes = [
 ];
 
 const router = createRouter({
-  history: createWebHashHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes,
 });
 
@@ -67,8 +73,24 @@ router.onError((error) => {
 
 // 添加导航守卫
 router.beforeEach((to, from, next) => {
-  console.log("导航到:", to.path);
-  next();
+  const userStore = useUserStore();
+
+  // 如果需要登录认证
+  if (to.matched.some((record) => record.meta.requiresAuth)) {
+    // 检查用户是否已登录
+    if (!userStore.loginStatus) {
+      // 未登录则跳转到登录页
+      next({
+        path: "/login",
+        query: { redirect: to.fullPath },
+      });
+    } else {
+      next();
+    }
+  } else {
+    // 不需要登录认证的页面直接放行
+    next();
+  }
 });
 
 export default router;

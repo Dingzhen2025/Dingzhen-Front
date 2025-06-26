@@ -1,4 +1,5 @@
 import axios from "axios";
+import { useUserStore } from "../stores/user";
 
 const BASE_URL = "http://47.107.172.202:8080"; // 后端服务器地址
 
@@ -28,6 +29,7 @@ export const imageApi = {
   // 添加新的图片记录
   async addImage(imageData) {
     try {
+      const userStore = useUserStore();
       console.log("准备上传图片:", imageData);
 
       // 验证必要参数
@@ -51,7 +53,7 @@ export const imageApi = {
       formData.append("img", imageData.file); // 二进制文件
       formData.append("dev", "development"); // 可选参数
       formData.append("dir", normalizeFilePath(imageData.filePath)); // 可选参数
-      formData.append("userId", "45"); // 用户ID
+      formData.append("userId", userStore.userId?.toString()); // 使用实际用户ID
 
       console.log("发送上传图片请求，uniqueKey:", uniqueKey);
       const response = await axios.post(`${BASE_URL}/images/upload`, formData, {
@@ -62,8 +64,8 @@ export const imageApi = {
       });
 
       // 按照接口文档验证响应
-      if (response.data.code === 0) {
-        // 成功状态码为0
+      if (response.data.code === 200) {
+        // 成功状态码为200
         console.log("图片上传成功:", response.data);
         return {
           code: response.data.code,
@@ -110,7 +112,7 @@ export const imageApi = {
           imgName: image.fileName,
           dev: "development",
           dir: normalizeFilePath(image.filePath),
-          userId: 45, // 注意：这里的userId需要是整数类型
+          userId: userStore.userId?.toString(), // 注意：这里的userId需要是整数类型
         };
 
         console.log("发送删除图片请求，参数:", params);
@@ -262,6 +264,46 @@ export const imageApi = {
     } catch (error) {
       console.error("图搜图失败:", error.response?.data || error.message);
       throw error;
+    }
+  },
+
+  // 图搜图
+  async searchByImage(file) {
+    try {
+      const userStore = useUserStore();
+      // 构造表单数据
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("userId", userStore.userId?.toString()); // 使用实际用户ID，如果未登录则使用默认值
+
+      // 发送搜索请求
+      const response = await axios({
+        method: "post",
+        url: `${BASE_URL}/image/search`,
+        data: formData,
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      // 验证响应数据
+      if (!response.data) {
+        throw new Error("搜索失败：响应数据为空");
+      }
+
+      // 根据响应状态处理
+      if (response.data.code === 200) {
+        return {
+          success: true,
+          message: "搜索成功",
+          data: response.data.data,
+        };
+      } else {
+        throw new Error(response.data.msg || "搜索失败");
+      }
+    } catch (error) {
+      console.error("搜索失败:", error);
+      throw new Error(error.response?.data?.msg || error.message || "搜索失败");
     }
   },
 };
