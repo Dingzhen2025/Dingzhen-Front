@@ -1,12 +1,11 @@
 <template>
   <div class="search-result-container">
-    <!-- 加载状态 -->
-    <div v-if="loading" class="loading-container">
-      <el-loading :fullscreen="true" text="正在搜索相似图片..." />
-    </div>
-
     <!-- 搜索结果展示 -->
-    <div v-else class="result-content">
+    <div
+      v-loading="loading"
+      class="result-content"
+      text="正在努力搜索中，请稍候..."
+    >
       <!-- 搜索统计信息 -->
       <div class="search-stats">
         <h2>搜索结果</h2>
@@ -113,7 +112,7 @@ import { imageApi } from "@/api/imageApi";
 
 const router = useRouter();
 const route = useRoute();
-const loading = ref(false);
+const loading = ref(true);
 const totalResults = ref(0);
 const searchTime = ref(0);
 
@@ -330,12 +329,5 @@ onMounted(() => {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
-}
-
-.loading-container {
-  height: 400px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
 }
 </style>

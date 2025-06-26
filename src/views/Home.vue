@@ -17,6 +17,7 @@ import {
   ArrowRight,
   ArrowLeft,
   View,
+  PictureRounded,
 } from "@element-plus/icons-vue";
 import { useImageLibraryStore } from "@/stores/imageLibrary";
 
@@ -51,14 +52,9 @@ const libraryStats = computed(() => imageLibraryStore.formattedStats);
 
 const handleFileChange = async (file) => {
   const isImage = file.raw.type.startsWith("image/");
-  const isLt5M = file.raw.size / 1024 / 1024 < 5;
 
   if (!isImage) {
     ElMessage.error("只能上传图片文件！");
-    return;
-  }
-  if (!isLt5M) {
-    ElMessage.error("图片大小不能超过 5MB！");
     return;
   }
 
@@ -169,7 +165,7 @@ const nextStep = () => {
 图片总数：${libraryStats.value.totalImages || 0} 张
 最后更新：${libraryStats.value.lastUpdate}
 当前状态：${libraryStats.value.status}
-支持格式：JPG、PNG、GIF、WEBP`,
+支持格式：JPG、PNG、GIF、BMP、WEBP`,
       "确认图片库信息",
       {
         confirmButtonText: "确认并继续",
@@ -313,7 +309,7 @@ const handleImageError = () => {
                     {{ libraryStats.totalImages || 0 }} 张
                   </el-descriptions-item>
                   <el-descriptions-item label="支持格式">
-                    JPG, PNG, GIF
+                    JPG, PNG, GIF, BMP, WEBP
                   </el-descriptions-item>
                   <el-descriptions-item label="最后更新">
                     {{ libraryStats.lastUpdate || "未知" }}
@@ -348,26 +344,22 @@ const handleImageError = () => {
           <!-- 步骤2：上传搜索图片 -->
           <div v-else class="step-content">
             <div class="upload-section">
-              <div class="upload-area" v-if="!previewImage">
+              <div v-if="!previewImage" class="upload-container">
                 <el-upload
-                  class="upload-dragger"
                   drag
                   action="#"
-                  :auto-upload="false"
                   :show-file-list="false"
                   :on-change="handleFileChange"
-                  accept="image/*"
+                  :auto-upload="false"
+                  accept="image/png,image/jpeg,image/gif,image/bmp,image/webp"
+                  class="upload-dragger"
                 >
-                  <div class="upload-content">
-                    <el-icon class="upload-icon"><Upload /></el-icon>
-                    <div class="upload-text">
-                      将要搜索的图片拖到此处或<em>点击上传</em>
-                    </div>
-                    <div class="upload-tip">
-                      支持 jpg、png、gif 格式，单个文件不超过 5MB
-                    </div>
+                  <el-icon class="el-icon--upload"><PictureFilled /></el-icon>
+                  <div class="el-upload__text">
+                    将要搜索的图片拖到此处或<em>点击上传</em>
                   </div>
                 </el-upload>
+                <p class="upload-tip">支持 JPG, PNG, GIF, BMP, WEBP 格式</p>
               </div>
 
               <div v-else class="preview-section">
@@ -582,40 +574,21 @@ const handleImageError = () => {
   gap: 24px;
 }
 
-.upload-area {
+.upload-container {
   padding: 40px;
   background: rgba(255, 255, 255, 0.05);
   border-radius: 12px;
   transition: all 0.3s ease;
 }
 
-.upload-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
+.upload-dragger {
+  background-color: transparent;
+  border: 2px dashed rgba(255, 255, 255, 0.2);
 }
 
-.upload-icon {
-  font-size: 48px;
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.upload-text {
-  font-size: 16px;
-  color: #fff;
-}
-
-.upload-text em {
-  color: #60a5fa;
-  font-style: normal;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.upload-tip {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.6);
+.upload-dragger:hover {
+  border-color: #60a5fa;
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
 .preview-section {

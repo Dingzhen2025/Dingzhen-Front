@@ -112,7 +112,7 @@ function registerIpcHandlers(mainWindow) {
       const metadata = {
         lastModified: stats.mtimeMs,
         size: stats.size,
-        type: `image/${path.extname(filePath).toLowerCase().slice(1)}`,
+        type: getMimeType(filePath),
       };
 
       return {
@@ -125,6 +125,20 @@ function registerIpcHandlers(mainWindow) {
       throw error;
     }
   });
+}
+
+// 根据文件扩展名获取标准MIME类型
+function getMimeType(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeTypes = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+    ".webp": "image/webp",
+  };
+  return mimeTypes[ext] || "application/octet-stream"; // 提供一个通用后备
 }
 
 // 递归处理目录
