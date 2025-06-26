@@ -52,9 +52,9 @@
           <!-- 图片预览 -->
           <div class="image-preview" @click="showPreview(result)">
             <el-image
-              :src="result.url"
+              :src="BASE_URL+result.url"
               fit="cover"
-              :preview-src-list="[result.url]"
+              :preview-src-list="[BASE_URL+result.url]"
               loading="lazy"
             >
               <template #error>
@@ -109,6 +109,8 @@ import { useRouter, useRoute } from "vue-router";
 import { ElMessage } from "element-plus";
 import { Download, FolderOpened, PictureFilled } from "@element-plus/icons-vue";
 import { imageApi } from "@/api/imageApi";
+
+const BASE_URL = "http://47.107.172.202:8080"; // 后端服务器地址
 
 const router = useRouter();
 const route = useRoute();
@@ -214,8 +216,8 @@ const locateFile = (result) => {
 // 下载图片
 const downloadImage = async (result) => {
   try {
-    console.log("下载图片:", result.url);
-    const response = await fetch(result.url);
+    console.log("下载图片:", BASE_URL+result.url);
+    const response = await fetch(BASE_URL+result.url);
     const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
 

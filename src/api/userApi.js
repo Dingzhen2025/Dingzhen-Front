@@ -96,7 +96,7 @@ export const userApi = {
       }
 
       // 根据响应状态处理
-      if (response.data.code === 200 && response.data.data) {
+      if (response.data.code === 200) {
         const userData = response.data.data;
         // 确保返回正确的字段名称
         return {
