@@ -4,24 +4,30 @@
   "version": "0.0.0",
   "main": "main.js",
   "scripts": {
-    "dev": "concurrently \"npm run dev:vue\" \"npm run dev:electron\"",
-    "dev:vue": "vite",
-    "dev:electron": "nodemon --exec electron . --watch ./ --ext .js,.html,.css,.vue",
+    "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "wait-on tcp:3000 && nodemon --exec electron . --watch ./ --ext .js,.html,.css,.vue",
     "build": "vite build",
-    "preview": "vite preview",
-    "start": "electron ."
+    "preview": "vite preview"
   },
   "author": "NanY",
   "description": "this is Dingzhen",
   "dependencies": {
-    "vue": "^3.5.13",
-    "vue-router": "^4.5.1"
+    "axios": "^1.6.2",
+    "chokidar": "^3.5.3",
+    "electron-store": "^8.1.0",
+    "element-plus": "^2.4.2",
+    "pinia": "^2.1.7",
+    "sharp": "^0.32.6",
+    "vue": "^3.3.8",
+    "vue-router": "^4.2.5"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.2.3",
-    "concurrently": "^9.1.2",
-    "electron": "^36.2.1",
-    "nodemon": "^3.1.10",
-    "vite": "^6.3.5"
+    "@vitejs/plugin-vue": "^4.5.0",
+    "concurrently": "^8.2.2",
+    "electron": "^27.1.0",
+    "nodemon": "^3.0.2",
+    "vite": "^5.0.0",
+    "wait-on": "^7.2.0"
   }
 }
